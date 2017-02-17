@@ -1,0 +1,166 @@
+---
+title: "Stat 440, Homework 6"
+author: Sergey Ivanov
+output: pdf_document
+---
+
+\section{Problem 1}
+
+Given the dataset "prostate.cancer.txt", we're trying to find some correlation between our first six variables and the 7th column, "lpsa". We're doing this with "ridge regression", which we define as a variant of regression where we find the value of $\beta$ that minimizes
+
+$$\sum_i (y_i - x_i^T \beta)^2 + \lambda \sum_j=1^p \beta_j^2$$
+
+\subsection*{a}
+The first thing we need to do is to look for any obvious correlation in our dataset
+```{r}
+prostate <- read.table("prostate.cancer.txt", header = TRUE)
+pairs(prostate)
+```
+
+\pagebreak
+
+Visualy, the strongest correlations are between lcavol(i.e. column 1) and lpsa. All the visual correlations, in order of strongest to weakest are as follows
+
+\begin{enumerate}
+\item lcavol vs. lpsa
+\item lweight vs. lpsa
+\item lcp vs. lpsa
+\item lcavol vs. lcp
+\item lweight vs. lbph
+\item lcavol vs. lweight
+\end{enumerate}
+
+In short, this small set of variables seeems most correlated with lpsa as well as with each other
+
+\subsection*{b}
+Now, we want to split our data into our vector $y$ and matrix $x$
+```{r}
+X <- as.matrix(prostate[,1:6])
+y <- as.matrix(prostate[,7])
+```
+\subsection*{c}
+We define the function exactly like the definition of the ridge estimator
+
+$$\hat{\beta}_{ridge} = (X^T X + \lambda I)^{-1} X^T y$$
+
+```{r}
+get_ridge_est <- function(y,x,lambda){
+  #number of dimensions of resulting matrix is 
+  #columns x columns due to the transpose being on the left side
+  dims <- ncol(x)
+  #literally using the definition of the ridge MLE
+  x_t <- t(x)
+  #solve returns inverse of a matrix
+  out <- solve(x_t%*%x + lambda*diag(dims)) %*% x_t %*% y
+  
+  return(out)
+}
+```
+
+\subsection*{d}
+We now do 10-fold cross validation and randomly parition the data into 10 sets, then use one fold for testing and 9 for training the parameter $\hat{\beta}_{ridge}$
+
+```{r}
+numfolds <- 10
+#we sample from 1:10 with replacement for the size
+#of our dataset, thus each value in our folds array represents
+#the class of that index's element in our dataset
+folds <- rep(1:numfolds, ceiling(length(y)/numfolds))
+folds <- folds[1:length(y)]
+#now jumble
+folds <- sample(folds, length(y))
+```
+
+
+Now we define the functions to compute $\hat{mse}$ and $\hat{se}_mse$
+```{r}
+mse <- function(y, y_hat){
+  return (mean((y-y_hat)^2))
+}
+
+se<- function(y, y_hat){
+  return (sd(y-y_hat)^2 / length(y))
+}
+```
+
+Lets loop through each fold and compute our test and train $\hat{\beta}_{ridge}$
+
+```{r}
+#our initial value of lambda is 1
+basic_lambda <- 1
+beta_out <- list()
+# this doesn't really work if the data needs to be ordered
+# e.g. it's dependent or periodic
+#for each fold
+for (i in 1:10){
+  #declare our estimate array
+  y_hat <- rep(NA, length(y))
+  train_x <- X[folds != i,]
+  train_y <- y[folds != i]
+  test_x  <- X[folds == i,]
+  beta_out[[i]] <- get_ridge_est(train_y, train_x, basic_lambda)
+  #nifty technique to make new array and populate chunks
+  y_hat[folds==i] <- test_x %*% beta_out[[i]]
+}
+```
+
+After we compute our estimate for $\hat{y}$, we can get our $\hat{mse}$ and $\hat{se}_mse$
+```{r}
+simple_mse <-  mse(y, y_hat)
+simple_se  <-  se(y, y_hat)
+
+cat("For lambda = 1, we get [ MSE : ", simple_mse, " ],  [ SE : ", simple_se, " ]")
+```
+
+\subsection*{e}
+We now find the best lambda, by computing the cross-validation MSE and SE for 100 values of lambda, we will then plot the result as a function of lambda
+```{r}
+#now we find the best lambda by exhausting the space
+our_lambdas <- seq(0, 25, length=100)
+
+#first column is the MSE, second column is the SE
+result <- matrix(nrow = length(our_lambdas), ncol = 2)
+
+#initialize y_hat, then write-over for each lambda
+y_hat <- rep(NA, length(y))
+
+for (lamb_iter in 1:length(our_lambdas)){
+  #do the same as before
+  #lambda takes on a list element
+  basic_lambda <- our_lambdas[lamb_iter]
+  # this doesn't really work if the data needs to be ordered
+  # e.g. it's dependent or periodic
+  #for each fold
+  for (i in 1:10){
+    train_x <- X[folds != i,]
+    train_y <- y[folds != i]
+    test_x  <- X[folds == i,]
+    beta_vec <- get_ridge_est(train_y, train_x, basic_lambda)
+    #nifty technique to make new array and populate chunks
+    y_hat[folds==i] <- test_x %*% beta_vec
+  }
+  
+  result[lamb_iter,1] <- mse(y, y_hat)
+  result[lamb_iter,2] <- se(y, y_hat)
+}
+```
+
+Out of this set, our best lambda is the one that minimizes $\hat{mse}$
+
+```{r}
+#get index of min mse
+best_lambda_index <- match(min(result[,1]), result[,1])
+
+cat("Our best MSE value is for [ lambda = ", our_lambdas[best_lambda_index],
+    " ],  with [ MSE = ",result[best_lambda_index,1],
+    " ],  [ SE = ",result[best_lambda_index,2]," ]" )
+```
+
+Lets visualize these curves of lambda
+```{r}
+plot(our_lambdas, result[,1], type="l", lwd=3, ylim=range(c(result[,1]-result[,2], 
+      result[,1]-result[,2],result[,1]+result[,2])), col="blue", main = "error as a function of lambda")
+lines(our_lambdas, result[,1]+result[,2], col="red", lty=2)
+lines(our_lambdas, result[,1]-result[,2], col="red", lty=2)
+abline(v=(best_lambda_index/4))
+```

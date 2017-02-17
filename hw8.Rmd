@@ -1,0 +1,188 @@
+---
+title: "Stat 440, Homework 8"
+author: Sergey Ivanov
+output: pdf_document
+---
+
+\section{Problem 1}
+
+For each part of this problem we'll need to have the likelihood of the regression normal. We start with the general fitting of the regression to a normal distribution
+$$Y | \beta_0, \beta_1, x, \sigma^2 \sim N(\beta_0 + \beta_1 * x, \sigma^2)$$
+so our pdf is of the form
+$$f(y) = \frac{1}{{2 \pi \sigma^2}^{1/2}} exp[\frac{-1}{2\sigma^2}(y - \beta_0 - \beta_1 x)^2]$$
+and we can now get the likelihood function
+$$L(\theta; \vec{y}) = f(\vec{y} | \beta_0, \beta_1, \vec{x}, \sigma^2) = \prod_{i=1}^{n} \frac{1}{{2 \pi \sigma^2}^{1/2}}exp[\frac{-1}{2\sigma^2}(y_i - \beta_0 - \beta_1 x_i)^2] = \frac{1}{(2 \pi \sigma^2)^{n/2}} exp[\frac{-1}{2 \sigma^2} \sum_{i=1}^{n}(y_i - \beta_0 - \beta_1 x_i)^2]$$
+
+\subsection*{a}
+We want to generate the full conditional distribution for $\beta_0 | \beta_1, \sigma^2, \vec{y}, \vec{x}$ and a given $\sigma_{\beta_0}^2$, which we need for our priori since we assume that $\pi(\beta_0) \sim N(0,\sigma_{\beta_0}^2)$
+
+The posteriori is of the form
+$$\frac{L(\theta; \vec{y}) \pi(\beta_0)}{\int_{0}^{\infty} L(\theta; \vec{y}) \pi(\beta_0) d\beta_0}$$
+
+Now we substitute in the pdf's and begin the messy algebraic process, however, let's split this into two steps: numerator and denominator
+\newline
+Numerator simplification
+$$L(\theta; \vec{y}) \pi(\beta_0) = \frac{1}{(2 \pi \sigma^2)^{n/2}} exp[\frac{-1}{2 \sigma^2} \sum_{i=1}^{n}(y_i - \beta_0 - \beta_1 x_i)^2] \frac{1}{(2 \pi \sigma_{\beta_0}^2)^{1/2}}exp[\frac{-1}{ 2\sigma_{\beta_0}^2} \beta_0 ^2]$$
+let's set the notation
+$$\sigma_p^2=\sigma_{\beta_0}^2$$
+and continue by combining terms
+$$L(\theta; \vec{y}) \pi(\beta_0) = \frac{1}{2 \pi \sigma_p \sigma} exp{\frac{-1}{2}[(1/sigma^2)\sum_{i=1}^n (y_i - \beta_0 - \beta_1 x_i)^2 + (1/\sigma_p^2)\beta_0^2]} = \frac{1}{k_1} exp[\frac{-1}{2}[\frac{1}{\sigma^2}\sum_{i=1}^n(y_i - \beta_0 - \beta_1 x_i)^2 + \frac{1}{\sigma_p^2}\beta_0^2]] $$
+$$\frac{1}{k_1} exp[\frac{-1}{2}[\frac{1}{\sigma^2}\sum_{i=1}^n(y_i - \beta_0 - \beta_1 x_i)^2 + \frac{1}{\sigma_p^2}\beta_0^2]]$$
+notice we consoldidate multiples of our kernel into a generic constant
+
+since we want to get a function of $\beta_0$, we complete the squares to try and get a normal pdf for $\beta_0$ in terms of $\sigma_p$ and some mean. The first step in this process is distributing the exponent.
+$$\frac{1}{k_1} exp[\frac{-1}{2}[(1/\sigma^2)\sum_{i=1}^n (y_i^2 - 2\beta_0 y_i - 2\beta_1 y_i x_i + \beta_0^2 + 2\beta_0 \beta_1 x_i + \beta_1^2 x_i^2) + (1/\sigma_p^2)\beta_0]]$$
+
+$$= \frac{1}{k_1} exp[\frac{-1}{2}[\sum_{i=1}^n \frac{y_i^2}{\sigma^2} - \frac{2\beta_0}{\sigma^2} \sum_{i=1}^n y_i - \frac{2\beta_1}{\sigma^2} \sum_{i=1}^n (y_i \cdot x_i) + \frac{n\beta_0^2}{\sigma^2} + \frac{2\beta_0 \beta_1}{\sigma^2} \sum_{i=1}^n x_i + \frac{\beta_1^2}{\sigma^2} \sum_{i=1}^n x_i^2 + \frac{\beta_0^2}{\sigma_p^2}]]$$
+at this step we ignore all terms in this exponent that aren't relevant to $\beta_0$ or $\sigma_p$, relegating them to a new normalizing constant, after we do so we will complete the squares in terms of $\beta_0$ as random value. With that idea in mind, our complex expression can be reduced to
+$$C \cdot exp[\frac{-1}{2}[- \frac{2\beta_0}{\sigma^2} \sum_{i=1}^n y_i + \frac{n\beta_0^2}{\sigma^2} + \frac{2\beta_0 \beta_1}{\sigma^2} \sum_{i=1}^n x_i + \frac{\beta_0^2}{\sigma_p^2}]]$$
+for some normalizing constant $C$
+
+we can now put this expression in the form
+
+$$C \cdot exp[\frac{-1}{2}[\beta_0^2 (\frac{n}{\sigma^2} + \frac{1}{\sigma_p^2}) - 2\frac{\beta_0}{\sigma^2}(\sum_{i=1}^n y_i - \beta_1 \sum_{i=1}^n x_i)]]$$
+
+$$= C \cdot exp[\frac{-1}{2 \cdot (\frac{n}{\sigma^2} + \frac{1}{\sigma_p^2})^{-1}}[\beta_0^2  - 2 \beta_0 \frac{1}{\sigma^2 (\frac{n}{\sigma^2} + \frac{1}{\sigma_p^2})}(\sum_{i=1}^n y_i - \beta_1 \sum_{i=1}^n x_i)]]$$
+it's pretty convenient in this case that the coefficient to $\beta_0$ is a multiple of two, since we now complete the squares. The expression becomes
+$$= C \cdot exp[\frac{-1}{2 \cdot (\frac{n}{\sigma^2} + \frac{1}{\sigma_p^2})^{-1}}[ (\beta_0  - \frac{1}{n + \frac{\sigma^2}{\sigma_p^2}}(\sum_{i=1}^n y_i - \beta_1 \sum_{i=1}^n x_i))]^2]$$
+
+Of course, we create an additional term $c^2$ when completing this, but combine it again into the normalizing constant since it doesn't involve $\beta_0$
+
+Thus we see that $\beta_0 \sim C \cdot N( \frac{1}{n + \frac{\sigma^2}{\sigma_p^2}}(\sum_{i=1}^n y_i - \beta_1 \sum_{i=1}^n x_i)   , (\frac{n}{\sigma^2} + \frac{1}{\sigma_p^2})^{-1})$ for some normalizing constant $C$ we can find computationally
+
+\subsection*{b}
+We do the same procedure as above, but for $\beta_1 | \beta_0, \sigma^2, \vec{y}, \vec{x}$
+This time the full conditional distribution is $\beta_1 | \beta_0, \sigma^2, \vec{y}$ and a given $\sigma_{\beta_1}^2$, our current priori is $\pi(\beta_i) \sim N(0,\sigma_{\beta_1}^2)$, we will agin notate $\sigma_{\beta_1} = \sigma_p$ during our procedure for simplicity
+
+Like before, the posteriori is of the form, but this time we start with a normalizing constant $K_0$
+$$\frac{L(\theta; \vec{y}) \pi(\beta_1)}{\int_{0}^{\infty} L(\theta; \vec{y}) \pi(\beta_1) d\beta_1} = K_0 \cdot \frac{1}{(2 \pi \sigma^2)^{n/2}} exp[\frac{-1}{2 \sigma^2} \sum_{i=1}^{n}(y_i - \beta_0 - \beta_1 x_i)^2] \frac{1}{(2 \pi \sigma_p^2)^{1/2}}exp[\frac{-1}{ 2\sigma_p^2} \beta_1 ^2]$$
+all the steps are the same until we get to merging the exponents, distributing operations and completing the square
+$$= \frac{1}{k_1} exp[\frac{-1}{2}[\sum_{i=1}^n \frac{y_i^2}{\sigma^2} - \frac{2\beta_0}{\sigma^2} \sum_{i=1}^n y_i - \frac{2\beta_1}{\sigma^2} \sum_{i=1}^n (y_i \cdot x_i) + \frac{n\beta_0^2}{\sigma^2} + \frac{2\beta_0 \beta_1}{\sigma^2} \sum_{i=1}^n x_i + \frac{\beta_1^2}{\sigma^2} \sum_{i=1}^n x_i^2 + \frac{\beta_1^2}{\sigma_p^2}]]$$
+and again, we ignore exponents that don't have a $\beta_1$ 
+$$ = C \cdot exp[\frac{-1}{2}[(1/\sigma^2)(- 2\beta_1 \sum y_i x_i + 2\beta_0\beta_1\sum x_i + \beta_1^2 \sum x_i^2) + (1/\sigma_p^2)\beta_1^2]$$  
+$$= C exp[\frac{1}{2}[\beta_1^2 (\frac{1}{\sigma_p^2} + \frac{\sum x_i^2}{\sigma^2}) - \beta_1 \frac{2}{\sigma^2}(\sum x_i y_i - \beta_0 \sum x_i)]]$$
+we can complete the squares in the same method as above, by combining extra terms into the constant
+
+$$= C exp[\frac{1}{2 (\frac{1}{\sigma_p^2} + \frac{\sum x_i^2}{\sigma^2})^{-1}}[\beta_1  - \frac{1}{\sigma^2 (\frac{1}{\sigma_p^2} + \frac{\sum x_i^2}{\sigma^2})}( \sum x_i y_i - \beta_0 \sum x_i)]^2]$$
+
+Thus we find that the posterior for $\beta_1$ is normally distributed with
+
+$$\beta_1 \sim N(\frac{1}{\sigma^2 (\frac{1}{\sigma_p^2} + \frac{\sum x_i^2}{\sigma^2})}(\sum x_i y_i - \beta_0 \sum x_i), (\frac{1}{\sigma_p^2} + \frac{\sum x_i^2}{\sigma^2})^{-1})$$
+
+\subsection*{c}
+ the procedure for the variance is slightly different, since the prior is now an inverse gamma distribution, so the pdf of $\pi(\sigma^2) ~ InvGamma(a,b)$, we use this to generate conditional distribution $\sigma^2 | \beta_0, \beta_1,  \vec{y}, \vec{x}, a, b$
+ 
+$$\frac{L(\theta; \vec{y}) \pi(\sigma^2)}{\int_{0}^{\infty} L(\theta; \vec{y}) \pi(\sigma^2) d\sigma^2} 
+= (\sigma^2)^{-a-1} \frac{b^a}{\Gamma(a)} exp[\frac{-b}{\sigma^2}] \frac{1}{(2 \pi \sigma^2)^{n/2}} exp[\frac{-1}{2 \sigma^2} \sum_{i=1}^{n}(y_i - \beta_0 - \beta_1 x_i)^2]$$
+
+$$= (\sigma^2)^{-a-n/2-1}/(\Gamma(a) * (2 \pi)^{n/2}) exp[\frac{-2b - \sum(y_i - \beta_0 - \beta_1 * x_i)^2}{2\sigma^2}]$$
+again, any parameter that doesn't depend on $\sigma^2$ is treated as a constant and factored out
+$$= C * \frac{(\sigma^2)^{-a-n/2-1}}{\Gamma(a)} exp[\frac{-2b - \sum(y_i - \beta_0 - \beta_1 * x_i)^2} {2 \sigma^2}]$$
+
+So our result is just another inverse gamma distribution where
+
+This time
+
+$$\sigma^2 \sim InvGamma(a + n/2, b + \frac{1}{2}\sum(y_i - \beta_0 - \beta_1 x_i)^2 )$$
+
+\subsection*{d}
+
+Now we implement all of our methods as a gibbs sampler with priori $\sigma^2_{\beta_0} = 100$, $\sigma^2_{\beta_1} = 100$ and $a=0.01, b=0.01$
+
+we want 5,000 samples
+
+```{r}
+library("MCMCpack") # for rinvgamma, dinvgamma functions
+
+#load the data
+pingpong <- read.csv("pingpong.csv");
+#column 1 is spirulina(x_i), column 2 is scores(y_i)
+x <- pingpong[,1]
+y <- pingpong[,2]
+#defining parameters
+n<-5000
+s0_prior <- 100
+s1_prior <- 100
+a_prior  <- .01
+b_prior  <- .01
+
+datasize <- length(x)
+
+#defining where results are saved
+beta_0_samp  <- rep(NA, n)
+beta_1_samp  <- rep(NA, n)
+variance_samp<- rep(NA, n)
+```
+Now we start the sampling process by invidually drawing from each posteriori
+
+```{r}
+
+#choose some default values for our samples
+cur_beta_0    <- rnorm(1,0,100)
+cur_beta_1    <- rnorm(1,0,100)
+cur_variance  <- rinvgamma(1,.01,.01)
+
+for(i in 1:n){
+  
+  #it doesn't really matter but I'm going to sample beta1
+  # then beta2 then sigma since its in the same order we
+  #were presented
+  
+  #beta0 | rest
+  m <- (sum(y-cur_beta_1*x)/(datasize + cur_variance/s0_prior))
+  v <- (datasize/cur_variance + 1/s0_prior)^(-1)
+  cur_beta_0 <- rnorm(1, mean=m, sd=sqrt(v))
+  
+  mean_num <- (sum(x*y) - cur_beta_0 * sum(x))
+  mean_denom <- sum(x^2) + cur_variance/s1_prior
+  v <- (1/(s1_prior) + sum(x^2)/cur_variance)^(-1)
+  cur_beta_1 <-rnorm(1, mean=(mean_num/mean_denom), sd=sqrt(v))
+  
+  cur_variance <- rinvgamma(1, a_prior + datasize/2, b_prior + (1/2)*sum((y-cur_beta_0 - cur_beta_1*x)^2))
+
+  # Save iteration
+  beta_0_samp[i]   <- cur_beta_0
+  beta_1_samp[i]   <- cur_beta_1
+  variance_samp[i] <- cur_variance
+}
+```
+
+\subsection*{e}
+Now we plot kernel density estimates and try to get a pdf of the posterior
+## Marginal posteriors, on the same plot as the priors
+
+```{r}
+hist(beta_0_samp, prob = TRUE, 
+     main=substitute(paste(pi(beta_0*" | "*bold(y)))),
+     ylab="density", xlab=expression(beta_0))
+lines(density(beta_0_samp), col = "red", lwd=3)
+
+
+hist(beta_1_samp, prob = TRUE, 
+     main=substitute(paste(pi(beta_1*" | "*bold(y)))),
+     ylab="density", xlab=expression(beta_1))
+lines(density(beta_1_samp), col = "red", lwd=3)
+
+hist(variance_samp, prob = TRUE, 
+     main=substitute(paste(pi(sigma^2*" | "*bold(y)))),
+     ylab="density", xlab=expression(sigma^2))
+lines(density(variance_samp), col="red", lwd=3)
+```
+
+\subsection*{f}
+Posterior means and credible intervals, just get these by taking mean and order statistics
+```{r}
+## Posterior means
+
+mean(beta_0_samp)
+mean(beta_1_samp)
+mean(variance_samp)
+
+## Equal tail credible intervals
+      
+quantile(beta_0_samp, c(0.025, 0.975))
+quantile(beta_1_samp, c(0.025, 0.975))
+quantile(variance_samp, c(0.025, 0.975))
+```
+\subsection*{g}
+Due to beta 1 it sort of is, since even the lowest quantile shows good correlation

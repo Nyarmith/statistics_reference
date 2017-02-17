@@ -1,0 +1,355 @@
+---
+title: "Stat 440, Homework 9"
+author: Sergey Ivanov
+output: pdf_document
+---
+
+
+\section{Problem 1}
+
+\subsection*{the Metropolis-Hastings algorithm in terms of our problem}
+
+The Metropolis-Hastings algorithm is similar to the gibbs sampler, except it allows us to skip analytical derivations of the posterior distribution by using dependent iterations to explore the posterior distribution. 
+\linebreak
+\linebreak
+There are three main steps:
+\begin{enumerate}
+\item Create the likelihood function $L(\beta_0, \beta_1, \sigma^2 | \vec{x}, \vec{y})$
+\item Evaluate prior density. In this case: $\pi(\beta_0, \beta_1, \sigma^2)$
+\item At each iteration $i+1$, propose $(\beta_0^*, \beta_1^*, {\sigma^{*}}^2) \sim Normal((\beta_0^{(i)}, \beta_1^{(i)}, {\sigma^{(i)}}^2), (\tau^{2} I_{3}) )$
+\end{enumerate}
+
+For the third step, we accept our new proposal with some probability $\alpha$
+$$\alpha = min[1,r(\beta_0^*, \beta_1^*, {\sigma^{*}}^2)]$$
+
+$$r(\beta_0^*, \beta_1^*, {\sigma^{*}}^2) = \frac{h(\beta_0^*, \beta_1^*, {\sigma^{*}}^2| \vec{x}, \vec{y})}{h(\beta_0^{(i)}, \beta_1^{(i)}, {\sigma^{(i)}}^2 | \vec{x}, \vec{y})} \cdot \frac{q(\beta_0^{(i)}, \beta_1^{(i)}, {\sigma^{(i)}}^2 |\beta_0^*, \beta_1^*, {\sigma^{*}}^2)}{q(\beta_0^*, \beta_1^*, {\sigma^{*}}^2 | \beta_0^{(i)}, \beta_1^{(i)}, {\sigma^{(i)}}^2)}$$
+where $\pi$ is our posterior and $q$ is our proposal distirbution
+
+Intuitively, this says that given a proposal $\beta_0^*, \beta_1^*, {\sigma^{*}}^2$, we calculate the ratios of the posteriors(i.e. the probability distributions of the parameters). This means that for any set of parameters with a larger posterior than our current one will be accepted with probability $\alpha = 1$, and any motion towards a less likely set of parameters is not impossible, but occurs as a fraction of the probabiltiy of our current set of parameters.
+\linebreak
+The term $\frac{q(\vec{\theta^{(i)} | \vec{\theta^*}})}{q(\vec{\theta^*} | \vec{\theta^{(i)}})}$ acts to compensate for asymmetries in the sampling distribution.
+\linebreak
+At a high level, this sampling method basically tries to take random paths around the function with reasonable conditional probabilities. This is useful heuristic when trying to optimize high-dimensional, non-convex probability distributions, or simply multidimensional distributions with no closed form.
+\linebreak
+We define these above structures in R as such
+```{r}
+library("MCMCpack") # for rinvgamma, dinvgamma functions
+library("mvtnorm")  # multivariate normal
+#load the data
+pingpong <- read.csv("pingpong.csv");
+#column 1 is spirulina(x_i), column 2 is scores(y_i)
+x <- pingpong[,1]
+y <- pingpong[,2]
+n <- length(x)
+#First we define the likelihood function
+#with params being a vector of [beta0, beta1, sigma_sq]
+likelihood <- function(beta0, beta1, sigma_sq,x,y){
+  if (sigma_sq < 0) return (0)
+  result  <- prod(dnorm(y, mean = beta0 + beta1*x,  sd = sqrt(sigma_sq)))
+  return (result)
+}
+
+
+#this function draws the joint distribution given three means
+sample_joint <- function(beta0, beta1, sigma_sq,  tau){
+  mean_joint <- c(beta0, beta1, sigma_sq) #the mean of the joint dist, which is a vector
+  cov        <- tau*diag(3) #covariance matrix, but we're treating all these params as 
+#independent(orthogonal), which should be equivalent to just drawing normals along different axes
+  #we only sample once, since that's all we do every step for the all-at-once sampling
+  return (rmvnorm(1, mean = mean_joint, sigma = cov))
+}
+
+#evaluates pdf of param_s given param for our joint distribution
+joint_pdf <- function(beta0, beta1, sigma_sq, beta0_s, beta1_s, sigma_sq_s, tau){
+  old_mean <- c(beta0, beta1, sigma_sq)
+  old_cov <- tau*diag(3)
+  #actual evaluation
+  return(dmvnorm(c(beta0_s, beta1_s, sigma_sq_s), mean = old_mean, sigma = old_cov))
+}
+
+#the combined prior of our parameters
+prior_joint <- function(beta0, beta1, sigma_sq, prior_s0, prior_s1, prior_a, prior_b){
+  if (sigma_sq < 0) return (0)
+  #the actual function that multiplies the priors together
+  db0 <- dnorm(beta0, mean = 0, sd = sqrt(prior_s0))
+  db1 <- dnorm(beta1, mean = 0, sd = sqrt(prior_s1))
+  ds_sq <- dinvgamma(sigma_sq, shape = prior_a, scale = prior_b)
+  return ( db0 * db1 * ds_sq )
+}
+
+#this function returns a matrix of the iterations
+#format, each is a vector where
+#numIter = number of times to run M-H before returning all iterations
+#priors  = c(sigma0, sigma1, a, b)
+#startingvals = c(beta0, beta1, sigma_sq)
+#data = c(x,y)
+all_metropolis_pingpong <- function(numIter, priors, startingvals, data, t){
+  #first three columns are for the parameters, the last one is just a flag for whether
+  #we accepted or not
+  results <- matrix(NA, nrow = numIter, ncol = 4)
+  for (i in 1:numIter){
+    #draw candidates by sampling the joint
+    candidates <- sample_joint(startingvals[1], startingvals[2], startingvals[3], t)
+    #now we calculate r according to the formula from our intro
+    numerator <- likelihood(candidates[1], candidates[2], candidates[3], data[,1],data[,2]) *
+      prior_joint(candidates[1], candidates[2], candidates[3], priors[1], priors[2], priors[3], priors[4]) *
+      joint_pdf(startingvals[1], startingvals[2], startingvals[3], candidates[1], candidates[2], candidates[3], t)
+    #compare to our current values
+    denominator <- likelihood(startingvals[1], startingvals[2], startingvals[3], data[,1],data[,2])*
+      prior_joint(startingvals[1], startingvals[2], startingvals[3],priors[1], priors[2], priors[3], priors[4]) *
+      joint_pdf(candidates[1], candidates[2], candidates[3], startingvals[1], startingvals[2], startingvals[3], t)
+    #now we compute our probability of jumping to our new distribution
+    alpha <- numerator / denominator
+    
+    do_I_accept <- 0
+    #simple uniform probability
+    if((!is.na(alpha)) && runif(1) < alpha){
+      
+      #accept proposal
+      startingvals <- candidates
+      do_I_accept <- 1
+      
+    }
+    
+    results[i,] <- c(startingvals, do_I_accept)
+  }
+  
+  return (results)
+}
+```
+\subsection*{part a}
+In order to find a good tau, we brute force our sampling
+```{r, cache=TRUE}
+B <-15000
+Burn_In <- 5000 #Firt 1 to Burn_In samples are discarded
+s0_prior <- 100
+s1_prior <- 100
+a_prior  <- .01
+b_prior  <- .01
+init_guess <- c(2,1,1)
+
+#0.1 * power of 2, so (0.1 * 2^i)^2
+taus <- c(0.1^2, 0.2^2, 0.4^2, 0.8^2, 1.6^2, 3.2^2)
+#some simple metrics
+accept_ratios <- rep(NA, length(taus))
+at_once_times <- rep(NA, length(taus))
+total_results <- list() #we store the matrices here
+
+#we make a list to store the resulting matrices
+for (i in 1:length(taus)){
+  t <- system.time(current_out <- all_metropolis_pingpong(B, c(s0_prior, s1_prior, a_prior, b_prior),
+                                          init_guess, pingpong, taus[i]))
+  current_out <- current_out
+  #now parse and store results
+  accept_ratios[i] <- mean(current_out[-(1:Burn_In),4])
+  at_once_times[i] <- t[3] #time for B samples
+  total_results[[i]] <- current_out[,1:3]
+}
+
+#now we figure out which tau is the best by seeing which switch_ratio is closest to 0.4
+cat(taus)
+cat(accept_ratios)
+dists <- abs(accept_ratios - 0.4)
+best_tau_index <- match(min(dists),dists)
+cat("Tau Value (",sqrt(taus[best_tau_index]),") = ",taus[best_tau_index],"has acceptance closest to 0.4")
+
+our_params <- total_results[[best_tau_index]]
+```
+\subsection*{part b}
+Found best tuning parameter, now plot traces. You'll notice that burn in is much shorter than 5000 samples
+
+```{r}
+#trace of all params before burn-in
+par(mfrow = c(3, 1))
+plot(our_params[,1], type = "l", col="red", main="beta_0 before burn_in")
+plot(our_params[,2], type = "l", col="yellow",main="beta_1 before burn_in")
+plot(our_params[,3], type = "l", col="blue",main="sigma^2 before burn_in")
+
+our_params <- our_params[-(1:Burn_In),]
+
+#Now after burn-in
+plot(our_params[,1], type = "l", col="red", main="beta_0")
+plot(our_params[,2], type = "l", col="yellow", main="beta_1")
+plot(our_params[,3], type = "l", col="blue",main="sigma^2")
+
+```
+
+\subsection*{part c}
+plot ACF's for each param on separate axes
+```{r}
+#autocorrelation plots
+acf(our_params[,1], col="red", main="beta_0")
+acf(our_params[,2], col="yellow", main="beta_1")
+acf(our_params[,3], col="blue", main="sigma^2")
+```
+\subsection*{part d}
+reporting ESS for each param
+```{r}
+e1 <- effectiveSize(our_params[,1])
+e2 <- effectiveSize(our_params[,2])
+e3 <- effectiveSize(our_params[,3])
+cat("Effective size for beta_0 :", e1, "  %%  beta_0 : ",
+    e2, "  %%  sigma_squared : ", e3)
+```
+\subsection*{part e}
+make sampler that does "one variable at a time" and get the 3 different tuning parameters, this just means that we only change one parameter each run
+At each iteration $i+1$, propose $(\beta_0^*, \beta_1^{(i)}, {\sigma^{(i)}}^2) \sim Normal(\beta_0^{(i)}, \tau_{beta_0}^{2})$ and so forth for each variable
+```{r}
+#No we do almost the same as before, but with only *one* proposed variable
+#being updated at a time, we can reuse almost everything
+
+#this function returns a matrix of the iterations
+#format, each is a vector where
+#numIter = number of times to run M-H before returning all iterations
+#priors  = c(sigma0, sigma1, a, b)
+#startingvals = c(beta0, beta1, sigma_sq)
+#data = c(x,y)
+#t is a vector of taus, one for each parameter
+
+one_at_a_time_metropolis_pingpong <- function(numIter, priors, startingvals, data, t){
+  #first three columns are for the parameters, the last one is just a flag for whether
+  #we accepted or not
+  results <- matrix(NA, nrow = numIter, ncol = 6)
+  for (i in 1:numIter){
+    candidates <- startingvals
+    for (j in 1:3){
+      #we only sample one at a time!
+      candidates[j] <- rnorm(1,mean=startingvals[j], t[j])
+  
+      numerator <- likelihood(candidates[1], candidates[2], candidates[3], data[,1],data[,2]) *
+        prior_joint(candidates[1], candidates[2], candidates[3], priors[1], priors[2], priors[3], priors[4]) *
+        joint_pdf(startingvals[1], startingvals[2], startingvals[3], candidates[1], candidates[2], candidates[3], t[j])
+      #compare to our current values
+      denominator <- likelihood(startingvals[1], startingvals[2], startingvals[3], data[,1],data[,2])*
+        prior_joint(startingvals[1], startingvals[2], startingvals[3],priors[1], priors[2], priors[3], priors[4]) *
+        joint_pdf(candidates[1], candidates[2], candidates[3], startingvals[1], startingvals[2], startingvals[3], t[j])
+      #now we compute our probability of jumping to our new distribution
+      alpha <- numerator / denominator
+    
+      #simple uniform probability
+      if((!is.na(alpha)) && runif(1) < alpha){
+        
+        #accept proposal
+        results[i, j] <- candidates[j]
+        #already set it as fact
+        startingvals[j] <- candidates[j]
+        #set it as accept
+        results[i, j+3] <- 1 #accept
+      
+      } else {
+        #otherwise we correct our proposal vector
+        candidates[j]   <- startingvals[j]
+        results[i, j]   <- startingvals[j]
+        results[i, j+3] <- 0 #reject
+      }
+    }
+  }
+  
+  return (results)
+}
+```
+\subsection*{part f}
+choose tuning param and plot traces of each param on 3 separate axes
+```{r, cache=TRUE}
+#Almost same exact sequence
+#0.1 * power of 2, so (0.1 * 2^i)^2
+taus <- c(0.1^2, 0.2^2, 0.4^2, 0.8^2, 1.6^2, 3.2^2)
+
+#some simple metrics
+one_accept_ratios <- matrix(NA, ncol=3, nrow=length(taus))
+one_at_once_times <- rep(NA, length(taus))
+one_total_results <- list() #we store the matrices here
+
+#we make a list to store the resulting matrices
+for (i in 1:length(taus)){
+  t <- system.time(current_out <- one_at_a_time_metropolis_pingpong(B,
+                                    c(s0_prior, s1_prior, a_prior, b_prior),
+                                    init_guess, pingpong, c(taus[i],taus[i],taus[i])))
+  #get rid of Burn_In
+  current_out <- current_out
+  #now parse and store results
+  one_accept_ratios[i,] <- mean(current_out[-(1:Burn_In),4:6])
+  one_at_once_times[i] <- t[3] #time for B samples
+  one_total_results[[i]] <- current_out[,1:3]
+}
+
+#now we figure out which tau is the best by seeing which switch_ratio is closest to 0.4
+#cat(taus)
+cat(one_accept_ratios)
+dists <- abs(one_accept_ratios - 0.4)
+
+best_tau_index <- rep(NA,3)
+for (i in 1:3){
+  best_tau_index[i] <- match(min(dists[,i]),dists[,i])
+}
+best_tau <- c(taus[best_tau_index[1]], taus[best_tau_index[2]], taus[best_tau_index[3]])
+cat("Best beta_0 tau value (",sqrt(taus[best_tau_index[1]]),") = ",taus[best_tau_index[1]],"has acceptance closest to 0.4")
+cat("Best beta_1 tau value (",sqrt(taus[best_tau_index[2]]),") = ",taus[best_tau_index[2]],"has acceptance closest to 0.4")
+cat("Best sigma^2 tau value (",sqrt(taus[best_tau_index[3]]),") = ",taus[best_tau_index[3]],"has acceptance closest to 0.4")
+
+#Thus we will use that tau value and do the computation again
+our_one_params <- one_at_a_time_metropolis_pingpong(B,
+                   c(s0_prior, s1_prior, a_prior, b_prior),
+                   init_guess, pingpong, best_tau)
+colMeans(our_one_params[,4:6])
+our_one_params <- our_one_params[,1:3]
+```
+
+plot ACF's for each of the 3 parmas
+```{r}
+#trace of all params before burn-in
+par(mfrow = c(3, 1))
+plot(our_one_params[,1], type = "l", col="red", main="beta_0 before burn_in")
+plot(our_one_params[,2], type = "l", col="yellow",main="beta_1 before burn_in")
+plot(our_one_params[,3], type = "l", col="blue",main="sigma^2 before burn_in")
+
+our_one_params <- our_params[-(1:Burn_In),]
+
+#Now after burn-in
+plot(our_one_params[,1], type = "l", col="red", main="beta_0")
+plot(our_one_params[,2], type = "l", col="yellow", main="beta_1")
+plot(our_one_params[,3], type = "l", col="blue",main="sigma^2")
+```
+\subsection*{part g}
+
+
+```{r}
+#////**** PART G ****\\\\
+#autocorrelation
+acf(our_one_params[,1], col="red", main="beta_0")
+acf(our_one_params[,2], col="yellow", main="beta_1")
+acf(our_one_params[,3], col="blue", main="sigma^2")
+```
+
+\subsection*{part h}
+report EES for each of the 3 params
+
+```{r}
+#effective size
+e1 <- effectiveSize(our_one_params[,1])
+e2 <- effectiveSize(our_one_params[,2])
+e3 <- effectiveSize(our_one_params[,3])
+cat("Effective size for beta_0 :", e1, "  %%  beta_0 : ",
+    e2, "  %%  sigma_squared : ", e3)
+```
+
+\subsection*{part i}
+plot kernel density estimates, from MCMC sample, of the marginal posterior density from "variable at time" sampler
+
+```{r}
+par(mfrow=c(1,3))
+hist(c(our_one_params[,1],our_params[,1]), prob = TRUE, main="beta_0")
+lines(density(our_params[,1]), col = "blue")
+lines(density(our_one_params[,1]), col = "red")
+
+hist(c(our_one_params[,2],our_params[,2]), prob = TRUE, main="beta_1")
+lines(density(our_params[,2]), col = "blue")
+lines(density(our_one_params[,2]), col = "red")
+
+hist(c(our_one_params[,2],our_params[,2]), prob = TRUE, main="sigma^2")
+lines(density(our_params[,2]), col = "blue")
+lines(density(our_one_params[,2]), col = "red")
+```
+
+\subsection*{part j}
+compare "all at once" vs "variable at a time", the first method is literally three times faster, which makes a significant differencce, but the "one at a time" method allows us to converge faster and tune our parameters individually, if we have the right tuning params that is  

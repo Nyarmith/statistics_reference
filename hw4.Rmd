@@ -1,0 +1,188 @@
+---
+title: "Stat 440, Homework 4"
+author: Sergey Ivanov
+output: pdf_document
+---
+
+\section{Problem 1}
+
+\subsection*{a}
+We create a Zero-Inflated Poisson distribution by taking the product of a poisson with rate lambda and bernoulli with probability p, more formally
+if
+$$X \sim ZIP(p,\lambda)$$
+then
+$$X = Y \cdot X$$
+where
+$$Y \sim bern(p)$$
+$$Z \sim Pois(\lambda)$$
+
+For part a, we simulate 10,0000 iid samples with $p = 0.3$ and $\lambda = 7$
+```{r, problem1a, cache=FALSE}
+n <- 10000  #samples
+p <- 0.3
+lambda <- 7
+
+ZIP <- function(n,p,lambda){
+  return (rpois(n,lambda)*rbinom(n,1,p))
+}
+
+zip_samples <- ZIP(n, p, lambda)
+```
+
+Now we can plot a histogram of the values
+
+```{r}
+hist(zip_samples, freq=FALSE)
+```
+
+\subsection*{b}
+
+Now we do the same thing with 5 degrees of freedom, also plottinf the pdf of the original distribution against the histogram
+```{r, problem1b, cache=FALSE}
+ZIP_pdf <- function(x,p,lambda){
+  e <- exp(1)
+  if (x == 0){
+    return ((1-p)+p*e^(-lambda))
+  } else {
+    return (p*lambda^(x)*e^(-lambda)/factorial(x))
+  }
+}
+
+theoretial_probs <- rep(NA,10)
+MC_probs <- rep(NA,10)
+m <- 1000
+samples <- ZIP(m, p, lambda)
+for (i in 0:9){
+  theoretial_probs[i+1] <- ZIP_pdf(i,p,lambda)
+  MC_probs[i+1] <- sum(samples == i)/m
+}
+```
+
+Now we can compare the theoretical probaiblities with the Monte Carlo probabilities
+
+```{r}
+cat("Theoretical", theoretial_probs)
+cat("MC Probabilities", MC_probs)
+```
+
+\subsection*{c}
+
+We compute the confidence interval with a normal approximation
+
+```{r, problem1c, cache=FALSE}
+m <- 1000
+p <- 0.3
+lambda <- 7
+
+samps <- ZIP(m,p,lambda)
+
+mean_estimate <- mean(samps)
+var_estimate  <- var(samps)
+sd <- sqrt(var_estimate/m)
+
+# 95% CI:
+CI <- c(mean_estimate-1.96*sd, mean_estimate+1.96*sd)
+cat(CI)
+```
+
+\pagebreak
+
+\section{Problem 2}
+Estimating $\theta_{\alpha}$
+```{r, problem2a_setup, cache=FALSE}
+##copying and pasting the code from rejection.sampling.R
+rtnorm <- function(n, mu, sigma, a, b){
+    ## n = number of samples
+    ## mu= mean
+    ## sigma = standard deviation
+    ## a = lower bound
+    ## b = upper bound
+    x <- rep(NA, n)
+    for(i in 1:n) {
+        accept <- 0
+        while(accept==0) {
+            ## step 1: draw y ~ N(mu,sigma^2)
+            y <- rnorm(1, mu, sigma)
+            ## step 2: accept if y is in right region
+            if(y>a & y<b) {
+                x[i] <- y
+                accept <- 1
+            }
+        }
+        if ((i %% 100) == 0) cat("Done with", i, "samples.\n")
+   }
+    return(x)
+}
+```
+
+
+```{r}
+alpha <- 2
+n <- 10000
+samples <- rtnorm(n, 0, 1, alpha, Inf)
+
+mean(z)
+sqrt(1/n.samp*var(z))
+
+```
+
+Lets plot the histograms of our results
+```{r}
+hist(integrals[,1],freq=FALSE,main="MSE with 1000 samples")
+hist(integrals[,2],freq=FALSE,main="MSE with 10000 samples")
+hist(integrals[,3],freq=FALSE,main="MSE with 100000 samples")
+```
+
+Now that we have the estimates of the integrals, we can calculate the mean-squared-error where
+$$MSE_{(n)} = \frac{1}{m}\sum_{i=1}^m (\hat{\theta}_{(n)i} - \theta)$$
+
+```{r, problem2_soln, cache=FALSE}
+actual_value <- integrate(myfunc, 2, 4)  
+actual_value <- actual_value$value  #we know this is 24 because calculus
+
+#using the same for-loop structure as above
+MSE <- rep(NA,3)
+for (sampsize in 1:3){
+  #we perform the integral m times drawing sampsize samples
+  MSE[sampsize] <- (1/m)*sum((integrals[,sampsize]-actual_value)^2)
+}
+```
+
+We can see that our MSE decreases by an order of magnitude for every order of magnitude n increases, and thus the accuracy of the integral increases with larger sample sizes
+```{r, problem2_reveal,cache=FALSE}
+cat(n)
+cat(MSE)
+```
+
+\pagebreak
+
+\section{Problem 3}
+Using a similar approach to problem 2, we test the summation of distances from our estimated means to the true means. For this, we pick a  number of trials to test what $P(|\bar{X}_{(n)} - \mu | > .01)$ is for $n = (10, 100, 1000, 10000)$
+```{r, problem3, cache=FALSE}
+m <- 1000
+n <- c(10,100,1000,10000)
+sum_errors <- rep(0,4)
+
+actual_mean <- 3
+actual_variance   <- 1
+epsilon     <- 0.01
+#set up our simulation
+for (i in 1:4){
+  #using m=1000 to obtain estimate of how often x_bar - mean > epsilon
+  for (j in 1:m){
+    samps <- rnorm(n[i], actual_mean, sqrt(actual_variance))
+    mean_est <- mean(samps)
+    #maintain number of trials where our difference is greater than epsilon
+    sum_errors[i] <- sum_errors[i] + sum(abs(mean_est-actual_mean) > epsilon)
+  }
+  sum_errors[i] <- sum_errors[i] / m
+}
+```
+
+After calculating whether $|\bar{X} - \mu| > .01$ for $1000$ trials, we approximate our probability $\theta$ by dividing the sum of true trials by the total trials, here we can see that as $n$ increases, our probability $\theta$ decreases, hence verifying the weak law of large numbers
+
+```{r problem3_ans, cache=FALSE}
+cat("P(|mean - mu| > 0.01) for different sizes of n")
+cat(n)
+cat(sum_errors)
+```

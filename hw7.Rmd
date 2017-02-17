@@ -1,0 +1,358 @@
+---
+title: "Stat 440, Homework 7"
+author: Sergey Ivanov
+output: pdf_document
+---
+
+\section{Problem 1}
+
+\subsection*{a}
+After loading our data into an array $x$, we can numerically compute the log-likelihood function by passing in the sampled values and then maximizing with respect to $a$ and $b$.
+
+```{r, problem1a_setup, cache=FALSE}
+dat <- read.csv("BetaSamp.csv")
+x<-dat$x
+
+LL <- function(theta, args){
+  x <- args
+  a <- theta[1]
+  b <- theta[2]
+  R <- dbeta(x, a, b, log=TRUE)
+  return (sum(R))
+}
+#use fnscale because optim minimizes by default
+#we also know that a and b are both > 0,
+optim_results <- optim(c(0.5, 0.5), LL, args=x, method="L-BFGS-B", lower=c(0,0),
+                       upper=c(Inf,Inf), hessian=TRUE, control=list(fnscale=-1))
+
+```
+
+We then compute the confidence intervals using the hessian
+```{r, problem1a_answer, cache=FALSE}
+a_hat <- optim_results$par[1]
+b_hat <- optim_results$par[2]
+
+cat("MLE estimates for a and b: ",a_hat, b_hat)
+
+theta_inverse <- solve(-optim_results$hessian)
+
+a_se <- sqrt(theta_inverse[1,1])
+b_se <- sqrt(theta_inverse[2,2])
+
+a_hat_CI <- c(a_hat - 1.96*a_se,a_hat + 1.96*a_se)
+b_hat_CI <- c(b_hat - 1.96*b_se,b_hat + 1.96*b_se)
+
+cat("CI for a", a_hat_CI)
+cat("CI for b", b_hat_CI)
+```
+
+\subsection*{b}
+
+Using the estimates for $a$ and $b$ we calculated in the previous step, we repeatedly sample from a beta distribution with our estimators as the parameters.
+
+```{r, problem1b, cache=FALSE}
+#parametric bootstrap using our estimates of a and b from our previous step
+#since we know the distribution, we have the estimators for a and b
+
+B <- 1000
+a_para_boot <- rep(NA, B)
+b_para_boot <- rep(NA, B)
+
+for(i in 1:B){
+  #create new samples using same number of samples in original dataset(or is it B?)
+  samps <- rbeta(runif(length(x)),a_hat,b_hat)
+  
+  #get results with new set
+  optim_results <- optim(c(0.5, 0.5), LL, args=samps, method="L-BFGS-B",lower=c(0,0),
+                         upper=c(Inf,Inf), hessian=TRUE, control=list(fnscale=-1))
+  
+  ## calculate and store correlation of bootstrap sample
+  a_para_boot[i] <- optim_results$par[1]
+  b_para_boot[i] <- optim_results$par[2]
+}
+#Mean of estimates
+a_hat_bar <- mean(a_para_boot)
+b_hat_bar <- mean(b_para_boot)
+```
+
+Given this approach, we compute the CI's using the quantile functions
+
+```{r, problem1b_answer, cache=FALSE}
+#CI given with quantiles
+cat("Mean of boostrap estimates for a: ",a_hat_bar,"    Mean of bootstrap estimates for b:",b_hat_bar)
+cat("CI for a using parametric bootstrap", quantile(a_para_boot,c(.025,0.975)))
+cat("CI for b using parametric bootstrap", quantile(b_para_boot,c(.025,0.975)))
+```
+\pagebreak
+\subsection*{c}
+In non-parametric bootstrap, instead of assuming any knowledge of the distribution, we just sample with replacement from the original data set
+
+```{r, problem1c, cache=FALSE}
+#nonparametric bootstrap
+B<-1000
+a_np_boot <- rep(NA, B)
+b_np_boot <- rep(NA, B)
+
+for(i in 1:B){
+  #Just resampling from the same data
+  samps <- sample(x, length(x), replace = TRUE)
+  #get results with new set
+  optim_results <- optim(c(0.5, 0.5), LL, args=samps, method="L-BFGS-B",lower=c(0.001,0.001),
+                         upper=c(Inf,Inf), hessian=TRUE, control=list(fnscale=-1))
+  
+  a_np_boot[i] <- optim_results$par[1]
+  b_np_boot[i] <- optim_results$par[2] 
+}
+
+#Mean of estimates
+a_np_mean <- mean(a_np_boot)
+b_np_mean <- mean(b_np_boot)
+```
+
+In a similar fashion as before, we compute the confidence intervals by taking the quantiles of our array
+```{r, problem1c_answer, cache=FALSE}
+cat("Mean of nonparametric estimates for a: ",a_np_mean," --- b:",b_np_mean)
+cat("CI for a using nonparametric bootstrap", quantile(a_np_boot,c(.025,0.975)))
+cat("CI for b using nonparametric bootstrap", quantile(a_np_boot,c(.025,0.975)))
+```
+
+\pagebreak
+\section{Problem 2}
+\subsection*{a}
+Here we compute the ratio $\hat{\theta}$ of students in the class that get an $A$
+\newline
+To create a new bernoulli set where 1=A and 0!=A, we calculate the student's grade with $\frac{\sum{grades} - \min{grades}}{length(grades)}$, we then repeatedly sample from this set in a non-parametric fashionto calculate our $\overline{\theta} = \sum_{i=1}^{N}{\hat{\theta}}$
+
+```{r, problem2a, cache=FALSE}
+#Problem 2
+hw_scores <- read.csv("score.csv")
+
+#I don't know how to easily convert it to a matrix
+scores <- matrix(c(as.numeric(hw_scores[,1]),as.numeric(hw_scores[,2]),as.numeric(hw_scores[,3]),
+                   as.numeric(hw_scores[,4]),as.numeric(hw_scores[,5])),nrow=88,ncol=5)
+
+grades <- rep(NA, 88)
+for (i in seq(1,88)){
+  grades[i] <- (sum(scores[i,]) - min(scores[i,]))/400
+  if (grades[i] > 80){
+    grades[i] <- 1
+  } else {
+    grades[i] <- 0
+  }
+}
+ourtheta <- mean(grades)
+cat("Our initial estimate of theta: ", ourtheta)
+```
+
+Now we sample from our new set grades
+
+```{r, problem2aa, cache=FALSE}
+#Now we estimate from the grades dataset and use nonparametric bootstrap to perform CI
+B <- 1000
+theta_np_boot <- rep(NA, B)
+for (i in seq(1,B)){
+  bootstrap <- sample(grades, length(grades), replace=TRUE)
+  theta_np_boot[i] <- mean(bootstrap)
+}
+
+#theta
+theta <- mean(theta_np_boot)
+#CI
+cat("Theta non-parametrically estimated at: ", theta,"   With CI: ",quantile(theta_np_boot,c(.025,0.975)))
+```
+
+\subsection*{b}
+
+In order to model as a truncated norm, we define its density function and
+
+```{r, problem2b, cache=FALSE}
+#Now do bootstrap and get CI with our faulty parameters
+#making the truncated norm function
+gen_tnorm <- function(numsamp, args){
+  mean <- args[1]
+  sd <- args[2]
+  lower <- args[3]
+  upper <- args[4]
+  out   <- rep(NA,numsamp);
+  #get area under curve within our region
+  area <- pnorm(upper, mean, sd) - pnorm(lower, mean, sd) 
+  val <- rnorm(1,mean,sd)
+  while(numsamp > 0){
+    if (val < lower && val > upper){
+      val <- rnorm(1,mean,sd)
+    } else {
+      out[numsamp] <- val
+      numsamp = numsamp - 1
+      val <- rnorm(1,mean,sd)
+    }
+  }
+  return (out)
+}
+
+#get scores for second graded task
+scores2 <- as.numeric(hw_scores[,2])
+mean <- mean(scores2)
+var <- mean(scores2)
+
+R <- 1000
+bootstrap_means <- rep(NA, R)
+for (i in seq(1,R)){
+  sample <- gen_tnorm(length(scores2), c(mean, sqrt(var), 0, 100))
+  bootstrap_means <- mean(sample)
+}
+
+cat("Parametric Bootstrap Mean: ", mean(bootstrap_means) ," -- Confidence Interval: ",quantile(bootstrap_means, c(.025,.975)))
+```
+
+\pagebreak
+\section{Problem 3}
+For the sake of clarity, we explicitly define separate arrays for each parameter
+
+```{r, problem3, cache=FALSE}
+#Problem 3
+#Do 1000 times
+#(a) The asymptotic CI using the MLE
+#(b) The parametric bootstrap CI, using 500 bootstrap replicates
+#(c) The nonparametric bootstrap CI, using 500 bootstrap replicates.
+#(d) The BCa bootstrap CI, also using 500 bootstrap replicates.
+
+R <- 1000
+MLE_Est   <- rep(NA,R)
+MLE_Lower <- rep(NA,R)
+MLE_Upper <- rep(NA,R)
+
+para_boot_est    <- rep(NA, R)
+para_boot_lower  <- rep(NA, R)
+para_boot_higher  <- rep(NA, R)
+
+np_boot_est      <- rep(NA,R)
+np_boot_lower    <- rep(NA,R)
+np_boot_higher   <- rep(NA,R)
+
+bca_boot_est     <- rep(NA,R)
+bca_boot_lower   <- rep(NA,R)
+bca_boot_higher  <- rep(NA,R)
+```
+
+We then define the BCa function and the loglikelihood function, as well as a function that acts as an MLE for all intents and purposes
+```{r, problem3b, cache=FALSE}
+#computational LL
+gLL <- function(paras,args){
+  a <- paras[1]
+  b <- paras[2]
+  x <- args
+  return (sum(dgamma(x,a,b,log=TRUE)))
+}
+
+#BCa bootstrap
+BCa.adjustments <- function(x, theta.hat, theta.boot, theta.hat.fn, alpha=0.05){
+  x <- as.matrix(x)
+  n <- nrow(x)
+  
+  # bias correction
+  z.0 <- qnorm(mean(theta.boot < theta.hat))
+  
+  # acceleration factor
+  theta.jack <- rep(NA, n)
+  for (i in 1:n) {
+    theta.jack[i] <- theta.hat.fn(x[-i, ]) 
+  }
+  L <- mean(theta.jack) - theta.jack
+  a <- sum(L^3) / (6 * sum(L^2)^1.5)
+  
+  return(list(z.0=z.0, a=a))
+}
+
+#bcagLL
+bcagLL <- function(data){
+  t <-  optim(c(1.4, 1.4), gLL, args=data, method="L-BFGS-B",lower=c(0.1,0.1),
+                          upper=c(Inf,Inf), hessian=TRUE, control=list(fnscale=-1))
+  return (t$par[1])
+}
+
+```
+
+Now for the actual loop, each time we simply run every algorithm listed in the problem and add it to the variables declared earlier
+
+```{r, problem3computor, cache=FALSE}
+#progress bar
+pb = txtProgressBar(min = 0, max = 1000, file = stderr())
+
+
+for (i in seq(1, R)){
+  dataset <- rgamma(25, 1.5, 1.5)
+
+  optim_results <-  optim(c(1.4, 1.4), gLL, args=dataset, method="L-BFGS-B",lower=c(0.1,0.1),
+                upper=c(Inf,Inf), hessian=TRUE, control=list(fnscale=-1))
+  inverse <- solve(-optim_results$hessian)
+  a_se <- sqrt(inverse[1,1])
+  
+  MLE_Est[i]    <- optim_results$par[1]
+  MLE_Lower[i]  <- optim_results$par[1] - a_se*1.96
+  MLE_Upper[i]  <- optim_results$par[1] + a_se*1.96
+  
+  
+  #resample the var 500 times with our estimates of
+  boot <- rep(NA, 500)
+  for (j in seq(1,500)){
+    para_boot <- rgamma(25,optim_results$par[1],optim_results$par[2])
+    optim_out <-  optim(c(1.4, 1.4), gLL, args=para_boot, method="L-BFGS-B",lower=c(0.1,0.1),
+                          upper=c(Inf,Inf), hessian=FALSE, control=list(fnscale=-1))
+    boot[j] <- optim_out$par[1]
+  }
+  para_boot_est[i] <- mean(boot)
+  para_boot_lower[i] <- quantile(boot,0.025)
+  para_boot_higher[i] <- quantile(boot,0.975)
+  
+  #nonparametric bootstrapping
+  boot <- rep(NA, 500)
+  for (j in seq(1,500)){
+    S <- sample(dataset, length(dataset), replace = TRUE)
+    optim_out <-  optim(c(1.4, 1.4), gLL, args=S, method="L-BFGS-B",lower=c(0.1,0.1),
+                        upper=c(Inf,Inf), hessian=FALSE, control=list(fnscale=-1))
+    boot[j] <- optim_out$par[1]
+  }
+  np_boot_est[i]   <- mean(boot)
+  np_boot_lower[i] <- quantile(boot, 0.025)
+  np_boot_higher[i]<- quantile(boot, 0.975)
+  
+  BCa.adj <- BCa.adjustments(dataset, optim_results$par[1], boot, bcagLL, alpha=0.05)
+  z.0 <- BCa.adj$z.0
+  a <- BCa.adj$a
+    
+  ## Find alpha_1 and alpha_2, the adjusted quantiles
+  alpha <- 0.05
+  z.alpha1 <- qnorm(alpha/2)
+  z.alpha2 <- qnorm(1-alpha/2)
+
+  bca_boot_est[i]     <- z.0
+  bca_boot_lower[i]   <- pnorm(z.0 + (z.0+z.alpha1) / (1-a*(z.0+z.alpha1)))
+  bca_boot_higher[i]  <- pnorm(z.0 + (z.0+z.alpha2) / (1-a*(z.0+z.alpha2)))
+  
+  setTxtProgressBar(pb, i)
+}
+
+close(pb)
+
+#matrix to represent truth values
+CInclude <- matrix(0,nrow=1000,ncol=4)
+#Columns correspond to: MLE CI, parametric bootstrap CI, 
+for (i in seq(1,1000)){
+  CInclude[i,1] <- MLE_Lower[i] <= 1.5 && MLE_Upper >= 1.5
+  CInclude[i,2] <- para_boot_lower[i] <= 1.5 && np_boot_higher >= 1.5
+  CInclude[i,3] <- np_boot_lower[i] <= 1.5 && np_boot_higher >= 1.5
+  CInclude[i,4] <- bca_boot_lower[i] <= 1.5 && bca_boot_higher >= 1.5
+}
+```
+
+Finally, we can just analyze our results
+```{r, cache=FALSE}
+cat("MLE CI Correctness", sum(CInclude[,1]), "out of 1000: ", sum(CInclude[,1])/1000, "%  Coverage")
+cat("Parametric Bootstrap Correctness", sum(CInclude[,2]), "out of 1000: ", sum(CInclude[,2])/1000, "%  Coverage")
+cat("Nonparametric Bootstrap Correctness", sum(CInclude[,3]), "out of 1000: ", sum(CInclude[,3])/1000, "%  Coverage")
+cat("BCa Boot Correctness", sum(CInclude[,4]), "out of 1000: ", sum(CInclude[,4])/1000, "%  Coverage")
+
+cat("Means %% MLE : ", mean(MLE_Est), " Parametric Bootstrap: ", mean(para_boot_est)," NonParametric Bootstrap: ", mean(np_boot_est)," BCa Bootstrap: ", mean(bca_boot_est))
+```
+
+Out of all fo these methods, the MLE is the most accurate, with the parametric bootstrap coming in as second. This makes sense since our assupmtions of the model are correct. Finally, the non-parametric bootstrap comes in third with BCa at last

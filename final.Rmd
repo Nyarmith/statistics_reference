@@ -1,0 +1,443 @@
+---
+title: "Stat440, Final Exam"
+author: Sergey Ivanov
+output: pdf_document
+---
+
+We're considering an autoregressive model.
+$$y_{t} \sim N(\alpha \cdot y_{t-1}, \sigma^2), t=1,2,...,T$$
+This means that our current step is dependent on the last step. i.e. The i'th iteration mean $\mu_i = \alpha * y_{i-1}$
+
+```{r}
+#load the data file
+load("ts_02.RData")
+#creates variable y, whose i'th element corresponds to the
+#i'th randomly sampled y from our model
+#so we create a line plot to see the trend
+plot(y,type='l')
+#what is the size of our data?
+cat("Number of samples",length(y))
+```
+
+Our likelihood function is the same as any likelihood for a normal, except that we ignore our $i=1$ sample and with our given vector, $n = 100$
+
+$$f_y(y | \alpha \beta) = \frac{1}{\sqrt{2\pi\sigma^2}} \exp[\frac{-1}{2\sigma^2}(y_t - \alpha y_{t-1})^2]$$
+\pagebreak
+$$L(\vec{y} | \alpha \sigma) = \prod_{i=2}^n f_y(y | \alpha \beta) = \prod_{i=2}^n \frac{1}{\sqrt{2\pi\sigma^2}} \exp[\frac{-1}{2\sigma^2}(y_i - \alpha y_{i-1})^2]$$
+
+$$=\frac{1}{(2\pi\sigma^2)^{(n-1)/2}} \exp[\frac{-1}{2\sigma^2} \sum_{i=2}^n{(y_i - \alpha y_{i-1})^2}] = \frac{1}{(2\pi\sigma^2)^{(n-1)/2}} \exp[\frac{-1}{2\sigma^2} \sum_{i=2}^n{y_i^2 - 2\alpha y_i y_{i-1} + \alpha^2 y_{i-1}^2}]$$
+
+to get the analytical MLE, we take the logarithm of the function and then take its partial derivatives with respect to our variables of interest
+$$\ell(\vec{y} | \alpha \sigma) = log(L(\vec{y} | \alpha \sigma)) = log(\frac{1}{(2\pi\sigma^2)^{(n-1)/2}} \exp[\frac{-1}{2\sigma^2} \sum_{i=2}^n{y_i^2 - 2\alpha y_i y_{i-1} + \alpha^2 y_{i-1}^2}])$$
+$$= \frac{-1}{2\sigma^2}[\sum_{i=2}^n{y_i^2 - 2\alpha y_i y_{i-1} + \alpha^2 y_{i-1}^2}] - \frac{n-1}{2}log(2\pi\sigma^2)$$
+$$= \sum_{i=2}^n(\frac{2\alpha y_i y_{i-1}}{2 \sigma^2}) - \sum_{i=2}^n(\frac{y_i^2}{2 \sigma^2}) - \sum_{i=2}^n(\frac{\alpha^2 y_{i-1}^2}{2 \sigma^2}) - \frac{n-1}{2}log(2\pi\sigma^2)$$
+
+Now the partial derivatives with respect to our variables
+$$\frac{d \ell}{d\alpha} = (\sum_{i=2}^n(\frac{\alpha y_i y_{i-1}}{\sigma^2}))' - (\sum_{i=2}^n(\frac{\alpha^2 y_{i-1}^2}{2 \sigma^2}))' = \sum_{i=2}^n(\frac{y_i y_{i-1}}{\sigma^2}) - \alpha \sum_{i=2}^n(\frac{y_{i-1}^2}{\sigma^2})$$
+$$\frac{d \ell}{d\sigma^2} =\sum_{i=2}^n(\frac{y_i^2}{2 (\sigma^2)^2}) + \sum_{i=2}^n(\frac{\alpha^2 y_{i-1}^2}{2 (\sigma^2)^2}) - \frac{n-1}{2 \sigma^2} - \sum_{i=2}^n(\frac{\alpha y_i y_{i-1}}{(\sigma^2)^2})$$
+
+Now we equate the partial derivatives to 0 and solve for our parameters
+$$\frac{d \ell}{d\alpha} = \sum_{i=2}^n(\frac{y_i y_{i-1}}{\sigma^2}) - \alpha \sum_{i=2}^n(\frac{y_{i-1}^2}{\sigma^2}) = 0$$
+$$\alpha \sum_{i=2}^n(y_{i-1}^2) = \sum_{i=2}^n (y_i y_{i-1})$$
+$$\alpha = \frac{\sum_{i=2}^n (y_i y_{i-1})}{\sum_{i=2}^n(y_{i-1}^2)}$$
+
+$$\frac{d \ell}{d\sigma^2} =\sum_{i=2}^n(\frac{y_i^2}{2 (\sigma^2)^2}) + \sum_{i=2}^n(\frac{\alpha^2 y_{i-1}^2}{2 (\sigma^2)^2}) - \frac{n-1}{2 \sigma^2} - \sum_{i=2}^n(\frac{\alpha y_i y_{i-1}}{(\sigma^2)^2}) = 0$$
+$$= \sum_{i=2}^n(y_i^2) + \sum_{i=2}^n(\alpha^2 y_{i-1}^2) - 2\sum_{i=2}^n (\alpha y_i y_{i-1}) - (n-1)\sigma^2 = 0$$
+$$\sigma^2 = \frac{\sum_{i=2}^n(y_i^2) + \alpha^2 \sum_{i=2}^n(y_{i-1}^2) - 2\alpha \sum_{i=2}^n (y_i y_{i-1})}{n-1}$$
+
+\pagebreak
+
+\section{Problem 1}
+\subsection*{a}
+We compute the maximum likelihood estimate using our derivation as well as numerically using optim to confirm our result.
+
+```{r}
+
+#param[1] is mean, param[2] is sigma^2
+#data is the y vector
+LL <- function(params, args){
+  n <- length(args)
+  a  <- params[1]
+  s2 <- params[2]
+  
+  y_current <- args[2:n]
+  y_prev    <- args[1:n-1]
+  #use the actual formula before expansion
+  probs <- dnorm(y_current, mean=(y_prev*a), sd = sqrt(s2), log=TRUE)
+  return (sum(probs))
+}
+
+optim_results <- optim(c(0.5, 0.5), LL, args=y, method="L-BFGS-B", lower=c(-Inf,0.0000001),
+                       upper=c(Inf,Inf), hessian=TRUE, control=list(fnscale=-1))
+```
+
+Now lets define our MLE's, use them to compute our parameters, then store the results.
+```{r}
+theta_MLE <- function(dat){
+  n <- length(dat)
+  y_current <- dat[2:n]
+  y_prev    <- dat[1:(n-1)]
+  theta <- sum(y_current*y_prev)/sum(y_prev^2)
+  return(theta)
+}
+
+s2_MLE <- function(dat,a){
+  n <- length(dat)
+  y_current <- dat[2:n]
+  y_prev    <- dat[1:n-1]
+  s2 <- sum((y_current-a*y_prev)^2)/(n-1)
+  return(s2)
+}
+
+MLE_theta <- theta_MLE(y)
+MLE_s2    <- s2_MLE(y,MLE_theta)
+
+cat("Our optim estimates of theta and s2: [theta,", optim_results$par[1], "]  [s2 , ",optim_results$par[2],"]")
+cat("Our MLE estimates of theta and s2: [theta,", MLE_theta, "]  [s2 , ",MLE_s2,"]" )
+```
+\subsection*{b}
+95% CI using hessian
+```{R}
+theta_inverse <- solve(-optim_results$hessian)
+
+theta_se <- sqrt(theta_inverse[1,1])
+s2_se <- sqrt(theta_inverse[2,2])
+theta_lower_bound <- optim_results$par[1] - 1.96*theta_se
+theta_upper_bound <- optim_results$par[1] + 1.96*theta_se
+cat("Theta 95% CI Bound (", theta_lower_bound, theta_upper_bound,")")
+s2_lower_bound <- optim_results$par[2] - 1.96*s2_se
+s2_upper_bound <- optim_results$par[2] + 1.96*s2_se
+cat("sigma squared 95% CI Bound (", s2_lower_bound, s2_upper_bound,")")
+```
+
+\subsection*{c}
+Parametric bootstrap 95% CI, we now resample from the same distribution with our maximised parameters.
+
+```{r,cache=TRUE}
+B <- 1000
+theta_para_boot <- rep(NA, B)
+s2_para_boot <- rep(NA, B)
+samps <- rep(NA, length(y))
+
+for(i in 1:B){
+  #create new samples using same number of samples in original dataset
+  samps[1] <- rnorm(1,mean=MLE_theta,sd=sqrt(MLE_s2))
+  #now we generate successive dependent samples
+  
+  for (j in 2:length(y)){
+    samps[j] <- rnorm(1,mean=(MLE_theta*samps[j-1]),sd=sqrt(MLE_s2))
+  }
+ 
+  #get results with new set
+  optim_results <- optim(c(0.5, 0.5), LL, args=samps, method="L-BFGS-B", lower=c(-Inf,0.0000001),
+                       upper=c(Inf,Inf), hessian=TRUE, control=list(fnscale=-1))
+ 
+  ## calculate and store correlation of bootstrap sample
+  theta_para_boot[i] <- optim_results$par[1]
+  s2_para_boot[i] <- optim_results$par[2]
+}
+#Mean of estimates
+theta_hat_bar <- mean(theta_para_boot)
+s2_hat_bar <- mean(s2_para_boot)
+
+cat("Means of estimates, [theta",theta_hat_bar, "]   [s2, ",s2_hat_bar,"]")
+cat("Para Bootstrap theta quantile ", quantile(theta_para_boot,c(.025,0.975)))
+cat("Para Bootstrap s2 quantile ", quantile(s2_para_boot,c(.025,0.975)))
+```
+
+This result is reasonable
+
+\subsection*{d}
+Nonparametric bootstrap 95% CI, here we just resample our data with replacement.
+```{r, cache=TRUE}
+#nonparametric bootstrap
+B<-1000
+theta_np_boot <- rep(NA, B)
+s2_np_boot <- rep(NA, B)
+
+for(i in 1:B){
+  #Just resampling from the same data
+  samps <- sample(y, length(y), replace = TRUE)
+  #get results with new set
+  optim_results <- optim(c(0.5, 0.5), LL, args=samps, method="L-BFGS-B", lower=c(-Inf,0.0000001),
+                       upper=c(Inf,Inf), hessian=TRUE, control=list(fnscale=-1))
+ 
+  theta_np_boot[i] <- optim_results$par[1]
+  s2_np_boot[i] <- optim_results$par[2]
+}
+
+#Mean of estimates
+theta_np_mean <- mean(theta_np_boot)
+s2_np_mean <- mean(s2_np_boot)
+```
+
+In a similar fashion as before, we compute the confidence intervals by taking the quantiles of our array
+```{r, problem1c_answer, cache=TRUE}
+cat("Mean of nonparametric estimates for theta: ",theta_np_mean," --- s2:",s2_np_mean)
+cat("CI for theta using nonparametric bootstrap", quantile(theta_np_boot,c(.025,0.975)))
+cat("CI for s2 using nonparametric bootstrap", quantile(s2_np_boot,c(.025,0.975)))
+```
+However, since resampling breaks our dependence relationship, our answer is garbage
+\pagebreak
+
+\section{Problem 2}
+We're going to take our model and apply metropolis-hastings random walks to it.
+We're given the prior distributions
+$$\alpha \sim Unif(-1,1)$$
+$$\sigma^2 \sim Exp(1/10)$$
+\subsection*{a}
+The joint posterior distribution is defined as
+$$f(\alpha, \sigma^2 | \vec{y}) = \frac{L(\alpha, \sigma^2 | \vec{y}) \pi(\alpha) \pi(\sigma^2)}{\int_{-\infty}^{\infty}\int_{0}^{\infty}L(\alpha, \sigma^2 | \vec{y}) \pi(\alpha) \pi(\sigma^2) d\sigma^2 d\alpha}$$
+$$ = \frac{\frac{1}{(2\pi\sigma^2)^{(n-1)/2}}exp[\frac{-1}{2 \sigma^2} \sum_{t=2}^n (y_t-y_{t-1}\cdot\alpha)^2] \cdot (10exp[-10\sigma^2]) \cdot (\frac{1}{2} (H(\alpha+1) - H(\alpha-1)))}
+{\int_{-\infty}^{\infty}\frac{1}{(2\pi\sigma^2)^{(n-1)/2}}exp[\frac{-1}{2 \sigma^2} \sum_{t=2}^n (y_t-y_{t-1}\cdot\alpha)^2] \cdot (10exp[-10\sigma^2]) \cdot (\frac{1}{2})d\sigma^2 d\alpha}$$
+where $H(x)$ is the heavyside step function\newline
+\newline
+We focus on the numerator since we can compute the noramlizing constant analytically. The numerator gives us the form of our pdf
+$$f(\alpha, \sigma^2 | \vec{y}) \propto C \cdot \frac{10 (H(\alpha+1) - H(\alpha-1))}{(2\pi\sigma^2)^{(n-1)/2}} exp[\frac{1}{\sigma^2}\sum_{i=2}^n(y_t - \alpha y_{t-1})^2 - 10 \sigma^2]$$
+$$\propto C \cdot \frac{(H(\alpha+1) - H(\alpha-1))}{(\sigma^2)^{(n-1)/2}} exp[\frac{1}{\sigma^2}\sum_{i=2}^n(y_t - \alpha y_{t-1})^2 - 10 \sigma^2] $$
+
+which is about as far as we can get in our simplification
+
+\subsection*{b}
+We pick our proposal distributions for $\alpha$ and $\sigma^2$, in this case I'm picking from the normal family, namely so I can tune them differently since $\alpha$ requires a much smaller tuning parameter in order to stay between its range of $(-1,1)$. Even with a modest tuning parameter of $\tau = 1$, we still have roughly a $\frac{1}{3}$ chance of drawing outside our allowable boundaries and having to waste an iteration resampling without actually moving anywhere.
+\newline
+\newline
+$\sigma^2$ will be drawn from the truncated normal distribution with the bounds $(0,\infty)$ and likely have a larger tuning parameter than $\alpha$. We will determine our final tuning parameters by iterating through reasonably chosen boundaries and picking the acceptance rate closest to $40\%$
+\newline
+\newline
+In summary...
+$$\alpha^{*} \sim q_{\alpha^{*}}(\alpha^{*}| \alpha) = N(\alpha, \tau_{\alpha}^2)$$
+$${\sigma^2}^{*} \sim q_{\sigma^2} ({\sigma^2}^{*} | \sigma^2) = N_{0}^{\infty}(\sigma^2, \tau_{\sigma^2}^2)$$
+
+\subsection*{c}
+
+Recall that part $a$ doesn't lend itself to gibbs sampling due to limiting our analytical derivation of the posterior distribution. Instead of calculating the posterior in a closed form, we calculate the best parameters using dependent iterations to explore the resulting distribution. 
+\linebreak
+\linebreak
+For each iteration of our one-variable-at-a-time sampler, we:
+\begin{enumerate}
+\item Iterate through all parameters, $theta_k$
+\item Compute our proposal $theta_k^{*} \sim q(\theta_k, \tau_k)$
+\item Accept our new propoosal with probability $\alpha = min(1, r(\alpha, \sigma^2))$
+\end{enumerate}
+
+We use our above derivations to create an MCMC sampler. Since our posterior isn't a clean pdf of some random variable, we use Metropolis-Hastings sampling instead
+```{r}
+library("truncnorm")
+
+# %% First We Write Out Our Prior pdf's %%
+
+#sigma squared ~ exp(1/10)
+s2_prior <- function(s2,lambda){
+  return (dexp(s2,rate=lambda))
+}
+
+#alpha ~ Unif(-1,1)
+alpha_prior <- function(alpha, lower, upper){
+  #return 1 if within bounds to avoid repeatedly
+  #multiplying by a fraction
+  return (2*dunif(alpha, min=lower, max=upper))
+}
+
+#likelihood, nothing is on a log scale here
+likelihood <- function(params, args){
+  n <- length(args)
+  a  <- params[1]
+  s2 <- params[2]
+  
+  y_current <- args[2:n]
+  y_prev    <- args[1:n-1]
+  #use the actual formula before expansion
+  probs <- dnorm(y_current, mean=(y_prev*a), sd = sqrt(s2))
+  return (prod(probs))
+}
+```
+\pagebreak
+Now let's define both $q$ sampling and density functions then define our metropolis implementation within a function
+```{r}
+# %% Parameter Alpha Proposal Functions %%
+#draw random sample of alpha from our normal distribution
+rq_alpha <- function(previous_alpha, tuning_param){
+  return(rnorm(1,mean=previous_alpha, sd=sqrt(tuning_param)))
+}
+#proposal distribution density for alpha
+dq_alpha <- function(value, mu, variance){
+  return(dnorm(value, mean=mu, sd=sqrt(variance)))
+}
+
+# %% Sigma Squared Proposal Functions %%
+#draw random sample
+rq_s2 <- function(previous_s2, tuning_param, lower, upper){
+  return(rtruncnorm(1,a=lower,b=upper,mean=previous_s2, sd=sqrt(tuning_param)))
+}
+#proposal distribution density for sigma
+dq_s2 <- function(value, mu, variance, lower, upper){
+  return(dtruncnorm(value, a=lower, b=upper, mean=mu, sd=sqrt(variance)))
+}
+
+# ##%%>>Now We Define the One At A Time Metropolis Sampler<<%%##
+# @Input
+# numIter = number fo times to run M-H before returning results
+# priors = c(a,b,lambda)
+# startingvals = initial guesses for (alpha, sigma^2)
+# data = y
+# t is a vector of taus, one for each parameter
+independent_metropolis_hastings <- function(numIter, priors, startingvals, data, t){
+  results <- matrix(NA, nrow=numIter, ncol=4) #column for param value and accept
+  candidates <- startingvals     #we just need to keep one other state
+  for (i in 1:numIter){
+    candidates[1] <- rq_alpha(candidates[1], t[1])
+    #define both parts of the ratio first
+    numerator <- likelihood(candidates, data) * 
+      alpha_prior(candidates[1],priors[1],priors[2]) *
+      s2_prior(candidates[2],priors[3]) * 
+      dq_alpha(startingvals[1],candidates[1],t[1]) *
+      dq_s2(startingvals[2],candidates[2],t[2],0,Inf)
+    #denominator
+    denom <- likelihood(startingvals, data) * 
+      alpha_prior(startingvals[1],priors[1],priors[2]) *
+      s2_prior(startingvals[2],priors[3]) * 
+      dq_alpha(candidates[1],startingvals[1],t[1]) *
+      dq_s2(candidates[2],startingvals[2],t[2],0,Inf)
+    #compute probability of accepting
+    alpha <- numerator/denom
+    #account for computation error
+    if (!is.na(alpha) && runif(1) < alpha){
+      #apply changes
+      results[i,1]    <- candidates[1]
+      startingvals[1] <- candidates[1]
+      results[i,3]    <- 1 #accepted
+    } else {
+      #revert
+      results[i,1]    <- startingvals[1]
+      candidates[1]   <- startingvals[1]
+      results[i,3]    <- 0 #not accepted
+    }
+    #continuing this ugly kludge of a function
+    candidates[2] <- rq_s2(candidates[2], t[2],0,Inf)
+    #define both parts of the ratio first
+    numerator <- likelihood(candidates, data) * 
+      alpha_prior(candidates[1],priors[1],priors[2]) *
+      s2_prior(candidates[2],priors[3]) * 
+      dq_alpha(startingvals[1],candidates[1],t[1]) *
+      dq_s2(startingvals[2],candidates[2],t[2],0,Inf)
+    #denominator
+    denom <- likelihood(startingvals, data) * 
+      alpha_prior(startingvals[1],priors[1],priors[2]) *
+      s2_prior(startingvals[2],priors[3]) * 
+      dq_alpha(candidates[1],startingvals[1],t[1]) *
+      dq_s2(candidates[2],startingvals[2],t[2],0,Inf)
+    
+    alpha <- numerator/denom
+    if (!is.na(alpha) && runif(1) < alpha){
+      results[i,2]    <- candidates[2]
+      startingvals[2] <- candidates[2]
+      results[i,4]    <- 1 #accepted
+    } else {
+      results[i,2]    <- startingvals[2]
+      candidates[2]   <- startingvals[2]
+      results[i,4]    <- 0 #not accepted
+    }
+  }
+  return(results)
+}
+```
+
+Now we brute force through some parameters to find the best tau's
+```{r cache=TRUE}
+#good s2 params seem to be around 3.2^2 and 12.8^2, ec..
+#alpha seems to be best around higher values in its own range as well
+
+alpha_taus <- c(0.6^2, 0.8^2, 1, 1.3^2, 1.7^2, 2.0^2)
+s2_taus <- seq(5,50,5)^2
+B<-15000 #number of times we sample, we discard first 5,000 samples
+burn <- 5000
+#we're trying every pairwise combination
+#row = s2, column = alpha
+accept_rate <- array(NA,dim=c(length(s2_taus),length(alpha_taus),2))
+for (y in 1:length(alpha_taus)){
+  for (x in 1:length(s2_taus)){
+    out <- independent_metropolis_hastings(B,c(-1,1,0.1),
+                     c(0.5,0.5),y,c(alpha_taus[y],s2_taus[x]))
+    #discard first 5000
+    out <- out[-(1:burn),]
+    #get frequency data
+    alpha_rate <- mean(out[,3])
+    s2_rate <- mean(out[,4])
+    #store in our 3-d matrix
+    accept_rate[x,y,1] <- alpha_rate
+    accept_rate[x,y,2] <- s2_rate
+  }
+}
+```
+
+We can now visualize our parameters and pick the best ones
+```{r}
+cat("alpha acceptance rate")
+print(accept_rate[,,1])
+cat("sigma squared acceptance rate")
+print(accept_rate[,,2])
+a  <- accept_rate[,,1] - 0.4
+s2 <- accept_rate[,,2] - 0.4
+cat("product, for minimization or something")
+jp <- abs(a*s2)
+print(jp)
+#get best value pair
+bestInd <- which(jp == min(jp), arr.ind=TRUE)
+```
+
+Now we recalculate the values with our new param and plot a trace of 1000 samples
+```{r}
+out <- independent_metropolis_hastings(1000,c(-1,1,0.1),
+                     c(0.5,0.5),y,c(alpha_taus[bestInd[2]],s2_taus[bestInd[1]]))
+
+par(mfrow=c(2,1))
+plot(out[,1], type="l",col="red",main="alpha without any burn in")
+plot(out[,2], type="l",col="blue",main="sigma squares without any burn in")
+```
+
+It looks like there's no transition time or burn in
+
+\subsection*{d}
+now we sample 10,000 times and then use our previous estimators to get statistics
+```{r}
+out <- independent_metropolis_hastings(10000,c(-1,1,0.1),
+                     c(0.5,0.5),y,c(alpha_taus[bestInd[2]],s2_taus[bestInd[1]]))
+alpha <- out[,1]
+s2    <- out[,2]
+```
+\subsection*{i}
+Posterior mean
+```{r}
+#just using sample means
+cat("Posterior means # (alpha :",mean(alpha),")   # ( s2 :",mean(s2),") ")
+```
+\subsection*{ii}
+Posterior variance
+```{r}
+#just using sample means
+cat("Posterior variance # (alpha :",var(alpha),")   # ( s2 :",var(s2),") ")
+```
+\subsection*{iii}
+effectiveSize
+```{r}
+library("coda")
+cat("Effective size # (alpha :",effectiveSize(alpha),")   # ( s2 :", effectiveSize(s2),") ")
+```
+\subsection*{iv}
+95% Credible Interval
+```{r}
+cat("95% Credible Intervals...")
+cat("##  Alpha =",  quantile(alpha,c(.025,.975)))
+cat("##  Sigma^2 =",quantile(s2,c(.025,.975)))
+```
+
+Just looking at it like a density
+```{r}
+par(mfrow=c(1,2))
+hist(alpha, prob=TRUE, main="alpha histogram")
+lines(density(alpha),col="red")
+
+hist(s2, prob=TRUE, main="sigma^2 histogram")
+lines(density(s2),col="blue")
+```

@@ -1,0 +1,131 @@
+---
+title: "Stat 440, Homework 3"
+author: Sergey Ivanov
+output: pdf_document
+---
+
+\section{Problem 1}
+
+\subsection*{a}
+We simulate from a chi-squared distribution with 1 degree of freedom 1000 times and plot its histogram
+```{r, problem1a, cache=FALSE}
+k <- 1
+N <- 1000
+#simulate N times with k degrees of freedom
+mySamps <- rchisq(N,k)
+#now we plot histogram of the results
+hist(mySamps, freq=FALSE)
+```
+
+\subsection*{b}
+
+Now we do the same thing with 5 degrees of freedom, also plottinf the pdf of the original distribution against the histogram
+```{r, problem1b, cache=FALSE}
+k <- 5
+N <- 1000
+#simulate N times with k degrees of freedom
+mySamps <- rchisq(N,k)
+#now we plot histogram of the results
+hist(mySamps, freq=FALSE)
+#and draw the original pdf
+lines(seq(0,25,length=200),dchisq(seq(0,25,length=200),k))
+```
+
+\subsection*{c}
+Now we use monte carlo approximation by sampling from the distribution 10000 times
+```{r, problem1c, cache=FALSE}
+k <- 5
+N <- 10000
+mySamps <- rchisq(N,k)
+#now we simply compute the mean and variance
+chi_mean <- mean(mySamps)
+chi_var  <- var(mySamps)
+cat("Chi-Squared Monte Carlo Estimates with", N, "samples and",k,"degrees of freedom")
+cat("mean:",chi_mean, " -- var:", chi_var)
+```
+
+\pagebreak
+\section{Problem 2}
+We estimate the integral $\int_2^4 (3x^2-2x-10) dx$ using monte-carlo techniques
+```{r, problem2a_setup, cache=FALSE}
+myfunc <- function(x){
+  lval <- 3*x^2-2*x-10
+  return(lval)
+}
+
+#number of times we perform the calculation
+m <- 1000
+#different sizes
+n <- c(1000, 10000, 100000)
+integrals <- matrix(NA, nrow=1000, ncol=3) #MC integral result for each m
+
+for (sampsize in 1:3){
+  #we perform the integral m times drawing sampsize samples
+  for (i in 1:m){
+    #draw samples
+    unif_samps <- runif(n[sampsize], 2, 4)
+    integrals[i,sampsize] <- (4-2) * mean(myfunc(unif_samps))
+  }
+}
+```
+
+Lets plot the histograms of our results
+```{r}
+hist(integrals[,1],freq=FALSE,main="MSE with 1000 samples")
+hist(integrals[,2],freq=FALSE,main="MSE with 10000 samples")
+hist(integrals[,3],freq=FALSE,main="MSE with 100000 samples")
+```
+
+Now that we have the estimates of the integrals, we can calculate the mean-squared-error where
+$$MSE_{(n)} = \frac{1}{m}\sum_{i=1}^m (\hat{\theta}_{(n)i} - \theta)$$
+
+```{r, problem2_soln, cache=FALSE}
+actual_value <- integrate(myfunc, 2, 4)  
+actual_value <- actual_value$value  #we know this is 24 because calculus
+
+#using the same for-loop structure as above
+MSE <- rep(NA,3)
+for (sampsize in 1:3){
+  #we perform the integral m times drawing sampsize samples
+  MSE[sampsize] <- (1/m)*sum((integrals[,sampsize]-actual_value)^2)
+}
+```
+
+We can see that our MSE decreases by an order of magnitude for every order of magnitude n increases, and thus the accuracy of the integral increases with larger sample sizes
+```{r, problem2_reveal,cache=FALSE}
+cat(n)
+cat(MSE)
+```
+
+\pagebreak
+
+\section{Problem 3}
+Using a similar approach to problem 2, we test the summation of distances from our estimated means to the true means. For this, we pick a  number of trials to test what $P(|\bar{X}_{(n)} - \mu | > .01)$ is for $n = (10, 100, 1000, 10000)$
+```{r, problem3, cache=FALSE}
+m <- 1000
+n <- c(10,100,1000,10000)
+sum_errors <- rep(0,4)
+
+actual_mean <- 3
+actual_variance   <- 1
+epsilon     <- 0.01
+#set up our simulation
+for (i in 1:4){
+  #using m=1000 to obtain estimate of how often x_bar - mean > epsilon
+  for (j in 1:m){
+    samps <- rnorm(n[i], actual_mean, sqrt(actual_variance))
+    mean_est <- mean(samps)
+    #maintain number of trials where our difference is greater than epsilon
+    sum_errors[i] <- sum_errors[i] + sum(abs(mean_est-actual_mean) > epsilon)
+  }
+  sum_errors[i] <- sum_errors[i] / m
+}
+```
+
+After calculating whether $|\bar{X} - \mu| > .01$ for $1000$ trials, we approximate our probability $\theta$ by dividing the sum of true trials by the total trials, here we can see that as $n$ increases, our probability $\theta$ decreases, hence verifying the weak law of large numbers
+
+```{r problem3_ans, cache=FALSE}
+cat("P(|mean - mu| > 0.01) for different sizes of n")
+cat(n)
+cat(sum_errors)
+```
